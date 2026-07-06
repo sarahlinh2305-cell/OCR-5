@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OCR Evaluation Dashboard</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@17/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.production.min.js" crossorigin></script>
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        .tab-active {
+            border-bottom: 2px solid #3b82f6;
+            color: #3b82f6;
+            font-weight: 600;
+        }
+
+        .tab-inactive {
+            color: #6b7280;
+            font-weight: 500;
+        }
+
+        .tab-inactive:hover {
+            color: #374151;
+            border-bottom: 2px solid #d1d5db;
+        }
+    </style>
+</head>
+
+<body class="bg-gray-100 text-gray-800">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState } = React;
+
+        // --- Icons ---
+        const IconCheck = () => <svg className="w-5 h-5 text-green-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>;
+        const IconX = () => <svg className="w-5 h-5 text-red-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>;
+        const IconWarn = () => <svg className="w-5 h-5 text-yellow-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>;
+        const IconExternalLink = () => <svg className="w-4 h-4 ml-1 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>;
+
+        // --- Components ---
+        const ProgressBar = ({ label, percentage, colorClass }) => (
+            <div className="mb-4">
+                <div className="flex justify-between mb-1">
+                    <span className="text-sm font-medium text-gray-700">{label}</span>
+                    <span className="text-sm font-medium text-gray-700">{percentage}%</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2.5">
+                    <div className={`h-2.5 rounded-full ${colorClass}`} style={{ width: `${percentage}%` }}></div>
+                </div>
+            </div>
+        );
+
+        const MetricCard = ({ title, value, subtext, bgColor }) => (
+            <div className={`bg-white rounded-lg shadow p-6 border-l-4 ${bgColor}`}>
+                <h3 className="text-gray-500 text-sm font-semibold uppercase tracking-wider mb-2">{title}</h3>
+                <div className="text-3xl font-bold text-gray-800">{value}</div>
+                <div className="text-sm text-gray-500 mt-2">{subtext}</div>
+            </div>
+        );
+
+        const ErrorTable = ({ data }) => (
+            <div className="bg-white rounded-lg shadow overflow-hidden mt-6 mb-6">
+                <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+                    <h2 className="text-lg font-bold text-gray-800">Bảng Phân Loại Lỗi (Error Classification)</h2>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm text-left text-gray-600">
+                        <thead className="text-xs text-gray-700 uppercase bg-gray-100">
+                            <tr>
+                                <th className="px-6 py-3 whitespace-nowrap">Trang</th>
+                                <th className="px-6 py-3 whitespace-nowrap">Lỗi</th>
+                                <th className="px-6 py-3 min-w-[200px]">Ground Truth</th>
+                                <th className="px-6 py-3 min-w-[200px]">OCR Output</th>
+                                <th className="px-6 py-3">Root Cause</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {data.map((row, idx) => (
+                                <tr key={idx} className="bg-white border-b hover:bg-gray-50">
+                                    <td className="px-6 py-4 font-medium text-gray-900">{row.page}</td>
+                                    <td className="px-6 py-4">{row.error}</td>
+                                    <td className="px-6 py-4 text-gray-500 italic break-words">{row.truth}</td>
+                                    <td className="px-6 py-4 text-red-500 break-words">{row.ocr}</td>
+                                    <td className="px-6 py-4">{row.cause}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        );
+
+        // --- Tabs Content ---
+        const TabOverview = () => (
+            <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Giới thiệu Case 1 */}
+                    <div className="bg-white rounded-lg shadow p-6">
+                        <div className="flex justify-between items-center mb-2">
+                            <h2 className="text-xl font-bold text-gray-800">Case 1: Mía đường Sơn La</h2>
+                            <span className="bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-0.5 rounded">Thành công một phần</span>
+                        </div>
+                        <a href="https://ocr.demo.sunext.vn/results/PHctdtVdS4hO8lmtTN09" target="_blank" className="inline-block mb-4 text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors">Xem kết quả trên hệ thống <IconExternalLink /></a>
+                        <p className="text-gray-600 mb-4">Tài liệu Hybrid PDF. Đọc rất tốt phần văn bản thuần túy, nhưng thất bại hoàn toàn ở việc tái tạo cấu trúc bảng biểu và bị lừa bởi Metadata chữ ký số.</p>
+                        <ProgressBar label="Điểm tổng quan (Score)" percentage="45" colorClass="bg-blue-500" />
+                    </div>
+
+                    {/* Giới thiệu Case 2 */}
+                    <div className="bg-white rounded-lg shadow p-6">
+                        <div className="flex justify-between items-center mb-2">
+                            <h2 className="text-xl font-bold text-gray-800">Case 2: Bánh kẹo Hải Hà</h2>
+                            <span className="bg-red-100 text-red-800 text-xs font-semibold px-2.5 py-0.5 rounded">Thất bại toàn diện</span>
+                        </div>
+                        <a href="https://ocr.demo.sunext.vn/results/kl0TGLZ0jGgTrdqR3fTz" target="_blank" className="inline-block mb-4 text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors">Xem kết quả trên hệ thống <IconExternalLink /></a>
+                        <p className="text-gray-600 mb-4">Tài liệu Scan chất lượng thấp, nhiễu cao. Output trả về 100% rác ký tự do hiểu nhầm đường kẻ bảng thành chữ viết. Thiếu tiền xử lý.</p>
+                        <ProgressBar label="Điểm tổng quan (Score)" percentage="5" colorClass="bg-red-500" />
+                    </div>
+                </div>
+
+                <div className="bg-white rounded-lg shadow overflow-hidden">
+                    <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+                        <h2 className="text-lg font-bold text-gray-800">Bảng Đối Chiếu Nguyên Nhân (Root Cause Matrix)</h2>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm text-left text-gray-500">
+                            <thead className="text-xs text-gray-700 uppercase bg-gray-100">
+                                <tr>
+                                    <th className="px-6 py-3">Tiêu chí</th>
+                                    <th className="px-6 py-3 border-l">Case 1 (Thành công cục bộ)</th>
+                                    <th className="px-6 py-3 border-l">Case 2 (Thất bại toàn diện)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr className="bg-white border-b">
+                                    <td className="px-6 py-4 font-medium text-gray-900">Loại tài liệu</td>
+                                    <td className="px-6 py-4 border-l">Hybrid PDF (Digital + Scan stamps)</td>
+                                    <td className="px-6 py-4 border-l">Scanned PDF (Low resolution)</td>
+                                </tr>
+                                <tr className="bg-gray-50 border-b">
+                                    <td className="px-6 py-4 font-medium text-gray-900">Chất lượng ảnh</td>
+                                    <td className="px-6 py-4 border-l">Tốt, độ tương phản cao</td>
+                                    <td className="px-6 py-4 border-l">Kém, mờ, tối, nhiều nhiễu</td>
+                                </tr>
+                                <tr className="bg-white border-b">
+                                    <td className="px-6 py-4 font-medium text-gray-900">Table Extraction</td>
+                                    <td className="px-6 py-4 border-l"><div className="flex items-center"><IconWarn /> Thất bại (Lỗi gộp ô, mất cấu trúc)</div></td>
+                                    <td className="px-6 py-4 border-l"><div className="flex items-center"><IconX /> Thất bại (Đọc viền bảng thành chữ)</div></td>
+                                </tr>
+                                <tr className="bg-gray-50 border-b">
+                                    <td className="px-6 py-4 font-medium text-gray-900">Nhận diện chữ (Text)</td>
+                                    <td className="px-6 py-4 border-l"><div className="flex items-center"><IconCheck /> Tuyệt vời (Đọc số liệu, chữ rõ ràng)</div></td>
+                                    <td className="px-6 py-4 border-l"><div className="flex items-center"><IconX /> Thảm họa (Toàn ký tự rác vô nghĩa)</div></td>
+                                </tr>
+                                <tr className="bg-white">
+                                    <td className="px-6 py-4 font-medium text-gray-900">Vấn đề cốt lõi</td>
+                                    <td className="px-6 py-4 border-l">Logic Parser sai (ưu tiên text layer ẩn thay vì ảnh gốc), thiếu Module Table.</td>
+                                    <td className="px-6 py-4 border-l">Engine yếu (Tesseract cũ), không có Pre-processing (Binarization) để khử nhiễu.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        );
+
+        const TabSuccess = () => {
+            const errorData = [
+                { page: "1", error: "Missing Content", truth: "Công văn 1018 và 2 bảng dữ liệu", ocr: "Được ký bởi NGUYỄN THỊ KHƯƠNG...", cause: "PDF Text Layer parsing error / Ưu tiên đọc Metadata thay vì Render ảnh gốc" },
+                { page: "5", error: "Character Error", truth: "1. Tiền", ocr: "1. Tiên", cause: "Lỗi OCR Language model (Thiếu dấu huyền)" },
+                { page: "5", error: "Stamp Error", truth: "M.S.D.N: 5500155321", ocr: "y600155321", cause: "Dấu mộc đỏ đè lên text gây Binarization failure" },
+                { page: "7", error: "Table Cell Merge", truth: "Quý 1/2018 từ 01/07/2017 đến 30/09/2017", ocr: "(Lặp lại 6 lần) Cho kỳ hoạt động từ ngày...", cause: "Table Detection failure (Không nhận diện được header gộp cột)" },
+                { page: "18", error: "Table Error", truth: "(Bảng Tăng giảm TSCĐ hữu hình có cấu trúc rõ ràng)", ocr: "(Dòng và cột bị trộn lẫn lộn, vỡ nát hoàn toàn)", cause: "Thuật toán nhận diện hàng/cột thất bại vì nhiều ô trống" },
+            ];
+
+            return (
+                <div className="space-y-6">
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center bg-white p-4 rounded-lg shadow border-l-4 border-blue-500">
+                        <div className="mb-3 sm:mb-0">
+                            <h2 className="text-lg font-bold text-gray-800">Case 1: Mía đường Sơn La</h2>
+                            <p className="text-sm text-gray-500">Báo cáo tài chính Quý 3/2017</p>
+                        </div>
+                        <a href="https://ocr.demo.sunext.vn/results/PHctdtVdS4hO8lmtTN09" target="_blank" className="inline-flex justify-center items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm font-medium">
+                            Xem kết quả thực tế <IconExternalLink />
+                        </a>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <MetricCard title="Character Accuracy" value="~95%" subtext="Trên các đoạn văn bản thuần" bgColor="border-green-500" />
+                        <MetricCard title="Table Accuracy" value="~20%" subtext="Bị vỡ nát layout hoàn toàn" bgColor="border-yellow-500" />
+                        <MetricCard title="OCR Score" value="45 / 100" subtext="Trừ điểm nặng do mất trang 1" bgColor="border-blue-500" />
+                    </div>
+
+                    <ErrorTable data={errorData} />
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div className="bg-white rounded-lg shadow p-6 border-t-4 border-green-500">
+                            <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center"><IconCheck /> Yếu tố thành công (Success Factors)</h2>
+                            <ul className="space-y-3">
+                                <li className="flex"><span className="mr-2">•</span> <p><strong>Chất lượng Font:</strong> Tài liệu sử dụng font chuẩn (Times New Roman), rõ nét, nền trắng tinh. Giúp thuật toán nhận diện ký tự (CRNN) hoạt động tối đa công suất.</p></li>
+                                <li className="flex"><span className="mr-2">•</span> <p><strong>Đọc số liệu tốt:</strong> Các chuỗi số tài chính dài có định dạng (VD: <code>610,319,725,904</code>) được nhận diện chính xác tuyệt đối, không nhầm dấu phẩy và dấu chấm.</p></li>
+                                <li className="flex"><span className="mr-2">•</span> <p><strong>Không nhiễu nền:</strong> Khác với bản scan thủ công, tài liệu này được xuất trực tiếp từ phần mềm kế toán nên không có nhiễu hạt (salt-and-pepper noise).</p></li>
+                            </ul>
+                        </div>
+
+                        <div className="bg-white rounded-lg shadow p-6 border-t-4 border-red-500">
+                            <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center"><IconWarn /> Điểm thất bại cần khắc phục</h2>
+                            <ul className="space-y-3">
+                                <li className="flex"><span className="mr-2">•</span> <p><strong>Lỗi Parsing Logic:</strong> Engine đọc nhầm Layer chứa Metadata chữ ký số thay vì render ảnh trang 1. Gây mất hoàn toàn công văn giải trình quan trọng.</p></li>
+                                <li className="flex"><span className="mr-2">•</span> <p><strong>Thất bại Cấu trúc Bảng:</strong> Bảng lưới phức tạp (có Merged Cells, Multi-line headers) bị băm nhỏ và rải đều ra text tĩnh, mất đi quan hệ Cột - Dòng.</p></li>
+                                <li className="flex"><span className="mr-2">•</span> <p><strong>Interference do con dấu:</strong> Dấu mộc đỏ và chữ ký đè lên số liệu (VD: <code>5500155321</code> thành <code>y600155321</code>). Engine không có bộ lọc màu (Color dropping) để tách layer.</p></li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div className="bg-white rounded-lg shadow p-6">
+                        <h2 className="text-lg font-bold text-gray-800 mb-4">Đề xuất giải pháp (Roadmap)</h2>
+                        <div className="flex flex-col md:flex-row gap-4">
+                            <div className="flex-1 bg-green-50 p-4 rounded-lg border border-green-200">
+                                <h3 className="font-bold text-green-800 mb-2">1. Khắc phục nhanh (Quick Wins)</h3>
+                                <p className="text-sm text-gray-600">Force rendering PDF sang ảnh 300DPI trước khi OCR để loại bỏ bẫy Text Layer ẩn. Tích hợp bộ lọc màu HSV để xóa màu đỏ của con dấu.</p>
+                            </div>
+                            <div className="flex-1 bg-blue-50 p-4 rounded-lg border border-blue-200">
+                                <h3 className="font-bold text-blue-800 mb-2">2. Cải tiến cốt lõi (Core Upgrade)</h3>
+                                <p className="text-sm text-gray-600">Áp dụng các Engine Document AI chuyên biệt (Azure Document Intelligence) có khả năng Table Structure Recognition thay vì chỉ dùng OCR text thô.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const TabFailure = () => {
+            const errorData = [
+                { page: "2", error: "Character Error / Gibberish", truth: "BẢNG CÂN ĐỐI KẾ TOÁN", ocr: "BiNc c.^N Ddr Kn roiN", cause: "Blur + Binarization Failure (Ảnh mờ khiến engine đoán sai nét)" },
+                { page: "2", error: "OCR Segmentation Error", truth: "1, 2, 3, 4, 5 (Cột)", ocr: "l, Ll, r1, IJ", cause: "Engine nhầm lẫn đường kẻ dọc của bảng thành các ký tự l, I, J" },
+                { page: "2", error: "Word Error", truth: "Hàng tồn kho", ocr: "Hhg,6D kbo", cause: "Low DPI + Poor OCR Language Model (Không có từ điển đối chiếu)" },
+                { page: "2", error: "Hallucination", truth: "313.326.210.400", ocr: "ririb.ns.s67", cause: "Character hallucination do chất lượng scan quá thấp" },
+                { page: "4", error: "Table Error", truth: "Lưới bảng Báo cáo KQ Hoạt động KD", ocr: "L::t. l:r ;", cause: "Thuật toán nhận diện bảng vắng mặt; engine cố gắng OCR nhiễu pixel" },
+            ];
+
+            return (
+                <div className="space-y-6">
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center bg-white p-4 rounded-lg shadow border-l-4 border-red-500">
+                        <div className="mb-3 sm:mb-0">
+                            <h2 className="text-lg font-bold text-gray-800">Case 2: Bánh kẹo Hải Hà</h2>
+                            <p className="text-sm text-gray-500">Báo cáo tài chính Quý 2/2016</p>
+                        </div>
+                        <a href="https://ocr.demo.sunext.vn/results/kl0TGLZ0jGgTrdqR3fTz" target="_blank" className="inline-flex justify-center items-center px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors text-sm font-medium">
+                            Xem kết quả thực tế <IconExternalLink />
+                        </a>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <MetricCard title="Character Accuracy" value="< 10%" subtext="Đa phần là rác ký tự" bgColor="border-red-500" />
+                        <MetricCard title="Table/Layout Accuracy" value="0%" subtext="Hoàn toàn bị xóa sổ" bgColor="border-red-500" />
+                        <MetricCard title="OCR Score" value="5 / 100" subtext="Chỉ lấy được metadata ban đầu" bgColor="border-gray-500" />
+                    </div>
+
+                    <ErrorTable data={errorData} />
+
+                    <div className="bg-red-50 rounded-lg shadow p-6 border border-red-200">
+                        <h2 className="text-xl font-bold text-red-800 mb-4 flex items-center"><IconX /> Phân Tích Thất Bại Toàn Diện (Catastrophic Failure)</h2>
+                        <p className="text-gray-700 mb-4">Trường hợp của Cty Bánh kẹo Hải Hà là một ví dụ điển hình khi đưa một <strong>tài liệu sai (Scan mờ, nhiễu)</strong> vào một <strong>quy trình OCR không phù hợp (thiếu Pre-processing và Layout Detection)</strong>.</p>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                            <div>
+                                <h3 className="font-bold text-gray-800 mb-2">Triệu chứng (Symptoms)</h3>
+                                <ul className="space-y-2 text-sm text-gray-600">
+                                    <li>• Tiêu đề bị băm nát: <code>BiNc c.^N Ddr Kn roiN</code> (Bảng cân đối kế toán)</li>
+                                    <li>• Tràn ngập ký tự lạ: <code>l, Ll, r1, IJ, ], _</code> thay thế cho số liệu.</li>
+                                    <li>• Lỗi từ vựng nặng: <code>Hhg,6D kbo</code> (Hàng tồn kho)</li>
+                                    <li>• Không giữ được bất kỳ cấu trúc dòng/cột nào.</li>
+                                </ul>
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-gray-800 mb-2">Nguyên nhân gốc (Root Causes)</h3>
+                                <ul className="space-y-2 text-sm text-gray-600">
+                                    <li>• <strong>Binarization Failure:</strong> Bản scan tối và mờ. Khi nhị phân hóa, nền xám bị chuyển thành các đốm đen (noise) dính vào chữ, phá vỡ hình dáng ký tự.</li>
+                                    <li>• <strong>Missing Layout Parser:</strong> Engine (có thể là Tesseract nguyên bản) hiểu nhầm các đường kẻ dọc/ngang của lưới bảng thành các ký tự thẳng đứng (l, I, |).</li>
+                                    <li>• <strong>No Language Model:</strong> Không có từ điển tiếng Việt đối chiếu ở bước Hậu xử lý (Post-processing) để sửa lỗi chính tả theo ngữ cảnh.</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="bg-white rounded-lg shadow p-6 border-t-4 border-purple-500">
+                        <h2 className="text-lg font-bold text-gray-800 mb-4">Cấu trúc Pipeline Đề xuất (Để xử lý triệt để)</h2>
+                        <div className="relative pt-4">
+                            <div className="flex flex-col md:flex-row items-center justify-between w-full space-y-4 md:space-y-0 md:space-x-4">
+
+                                <div className="bg-gray-100 p-4 rounded text-center w-full md:w-1/4 shadow-sm border border-gray-200">
+                                    <span className="block font-bold text-sm text-purple-700">1. Pre-Processing</span>
+                                    <span className="text-xs text-gray-500">OpenCV: Denoise, Adaptive Thresholding, Deskew</span>
+                                </div>
+                                <span className="hidden md:block text-gray-400">➔</span>
+
+                                <div className="bg-gray-100 p-4 rounded text-center w-full md:w-1/4 shadow-sm border border-gray-200">
+                                    <span className="block font-bold text-sm text-purple-700">2. Layout Analysis</span>
+                                    <span className="text-xs text-gray-500">YOLOv8 / LayoutLM: Detect Table, Headers, Signatures</span>
+                                </div>
+                                <span className="hidden md:block text-gray-400">➔</span>
+
+                                <div className="bg-gray-100 p-4 rounded text-center w-full md:w-1/4 shadow-sm border border-gray-200">
+                                    <span className="block font-bold text-sm text-purple-700">3. Core OCR</span>
+                                    <span className="text-xs text-gray-500">PaddleOCR / Google Vision nhận diện trên từng ô (Cell)</span>
+                                </div>
+                                <span className="hidden md:block text-gray-400">➔</span>
+
+                                <div className="bg-gray-100 p-4 rounded text-center w-full md:w-1/4 shadow-sm border border-gray-200">
+                                    <span className="block font-bold text-sm text-purple-700">4. Post-Processing</span>
+                                    <span className="text-xs text-gray-500">LLM Correction (Sửa chính tả kế toán tiếng Việt)</span>
+                                </div>
+
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- Main App ---
+        const App = () => {
+            const [activeTab, setActiveTab] = useState('overview');
+
+            return (
+                <div className="min-h-screen bg-gray-100 font-sans">
+                    {/* Header */}
+                    <header className="bg-white shadow-sm">
+                        <div className="max-w-6xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+                            <h1 className="text-2xl font-extrabold text-gray-900 flex items-center">
+                                <svg className="w-8 h-8 text-blue-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                                Document AI & OCR Evaluation Dashboard
+                            </h1>
+                            <p className="mt-1 text-sm text-gray-500">Phân tích chuyên sâu Root Cause cho Báo cáo Tài chính</p>
+                        </div>
+                    </header>
+
+                    {/* Main Content */}
+                    <main className="max-w-6xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
+
+                        {/* Tab Navigation */}
+                        <div className="mb-6 border-b border-gray-200">
+                            <ul className="flex flex-wrap -mb-px text-sm font-medium text-center">
+                                <li className="mr-2">
+                                    <button
+                                        onClick={() => setActiveTab('overview')}
+                                        className={`inline-block p-4 rounded-t-lg ${activeTab === 'overview' ? 'tab-active' : 'tab-inactive'}`}>
+                                        Tổng quan So sánh
+                                    </button>
+                                </li>
+                                <li className="mr-2">
+                                    <button
+                                        onClick={() => setActiveTab('success')}
+                                        className={`inline-block p-4 rounded-t-lg ${activeTab === 'success' ? 'tab-active' : 'tab-inactive'}`}>
+                                        Case Thành Công (Sơn La)
+                                    </button>
+                                </li>
+                                <li className="mr-2">
+                                    <button
+                                        onClick={() => setActiveTab('failure')}
+                                        className={`inline-block p-4 rounded-t-lg ${activeTab === 'failure' ? 'tab-active' : 'tab-inactive'}`}>
+                                        Case Thất Bại (Hải Hà)
+                                    </button>
+                                </li>
+                            </ul>
+                        </div>
+
+                        {/* Tab Rendering */}
+                        <div className="transition-all duration-300">
+                            {activeTab === 'overview' && <TabOverview />}
+                            {activeTab === 'success' && <TabSuccess />}
+                            {activeTab === 'failure' && <TabFailure />}
+                        </div>
+
+                    </main>
+                </div>
+            );
+        };
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+
+</html>
